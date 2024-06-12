@@ -43,7 +43,6 @@ def batch_process_ips(ips):
         print("Netcat command failed with errors:", errors)
         return []
     
-    # Return the output lines, skipping the first line which is a header
     return list(filter(lambda x: not ("AS" in x and "IP" in x and "Name" in x), output.splitlines()))
 
 
