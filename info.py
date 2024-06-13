@@ -246,13 +246,12 @@ def update():
     print(data)
     conn.close()
 
-
+update()
+scheduler = APScheduler()
+scheduler.init_app(app)
+scheduler.start()
+scheduler.add_job(id='update', func=update, trigger='interval', hours=24)
 if __name__ == '__main__':
-    update()
-    scheduler = APScheduler()
-    scheduler.init_app(app)
-    scheduler.start()
-    scheduler.add_job(id='update', func=update, trigger='interval', hours=24)
     app.run(debug=False)
 
 
