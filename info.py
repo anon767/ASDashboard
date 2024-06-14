@@ -25,12 +25,12 @@ def get_as_number(ip, conn):
     cursor = conn.cursor()
     cursor.execute('SELECT as_number, last_updated FROM ip_as_mapping WHERE ip = ?', (ip,))
     result = cursor.fetchone()
-    
+
     if result:
         last_updated = date.fromisoformat(result[1])
         if (date.today() - last_updated).days <= 7:
             return result[0]  # Return AS number if the record is up-to-date within the last 5 days
-    
+
     return None  # Return None if the AS number needs updating or isn't in the database
 
 
@@ -42,7 +42,8 @@ def batch_process_ips(ips):
     if process.returncode != 0:
         print("Netcat command failed with errors:", errors)
         return []
-    
+
+    # Return the output lines, skipping the first line which is a header
     return list(filter(lambda x: not ("AS" in x and "IP" in x and "Name" in x), output.splitlines()))
 
 
@@ -53,16 +54,18 @@ def collect_data(conn):
     batch_size = 1000  # Adjust batch size based on expected data size and memory constraints
     today = date.today()
 
-
+    all_data = []
     ips_to_update = []
     for ip in ips:
-        if get_as_number(ip, conn) is None:
+        as_number = get_as_number(ip, conn)
+        if as_number is None:
             ips_to_update.append(ip)
-    
+        else:
+            all_data.append((ip, as_number, str(today)))
+
     print(f"Processing {len(ips_to_update)} IPs in batches")
     cursor = conn.cursor()
- 
-    all_data = []
+
     for start in tqdm(range(0, len(ips_to_update), batch_size)):
         batch_ips = ips_to_update[start:start + batch_size]
         results = batch_process_ips(batch_ips)
@@ -80,34 +83,34 @@ def collect_data(conn):
             cursor.execute('REPLACE INTO ip_as_mapping (country, ip, as_name,  as_number, last_updated) VALUES (?, ?, ?,  ?, ?)', (country, ip, as_name, as_number, str(today)))
             all_data.append((ip, as_number, str(today)))
     conn.commit()
-    
+
     # Data for return or further processing
     data_df = pd.DataFrame(all_data, columns=['IP', 'AS Number', 'Date'])
 
     # Update the daily counts in a single transaction
     cursor.execute('''
-        SELECT as_name, as_number, COUNT(*) as count 
-        FROM ip_as_mapping 
-        WHERE last_updated = ? 
+        SELECT as_name, as_number, COUNT(*) as count
+        FROM ip_as_mapping
+        WHERE last_updated = ?
         GROUP BY as_number
     ''', (str(today),))
     daily_counts = cursor.fetchall()
     for as_name, as_number, count in daily_counts:
         cursor.execute('''
-            INSERT INTO daily_as_count (as_number, as_name, date, count) 
+            INSERT INTO daily_as_count (as_number, as_name, date, count)
             VALUES (?, ?, ?, ?)
-             ON CONFLICT(as_number, date) 
-            DO UPDATE SET count = count 
+             ON CONFLICT(as_number, date)
+            DO UPDATE SET count = count
         ''', (as_number, as_name, str(today), count))
     conn.commit()
-    
+
     return data_df
 
 def get_ip():
     if "X-Forwarded-For" in request.headers:
-        ip = request.headers["X-Forwarded-For"].split(',')[0]  
+        ip = request.headers["X-Forwarded-For"].split(',')[0]
     else:
-        ip = request.remote_addr  
+        ip = request.remote_addr
     return ip
 
 
@@ -133,7 +136,7 @@ def data():
     conn = sqlite3.connect('ip_as_data.db')
     as_number = request.args.get('asNumber')
     cursor = conn.cursor()
-    
+
     # Updated query to aggregate counts by date
     query = """
     SELECT date, SUM(count) as total_count
@@ -146,7 +149,7 @@ def data():
     results = cursor.fetchall()
     labels = [result[0] for result in results]
     counts = [result[1] for result in results]
-    
+
 
     query = """
     SELECT as_name, as_number
@@ -169,7 +172,7 @@ def data():
         }]
     })
 
-    
+
 @app.route('/dashboard')
 def dashboard_data():
     conn = sqlite3.connect('ip_as_data.db')
@@ -216,8 +219,13 @@ def dashboard_data():
         }
     })
 
+@app.route('/refresh')
+def refresh():
+    update()
+
 def update():
-    
+    print("update")
+
     conn = sqlite3.connect('ip_as_data.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -241,18 +249,16 @@ def update():
     ''')
     conn.commit()
 
-    print("update")
     data = collect_data(conn)
     print(data)
     conn.close()
+
 
 update()
 scheduler = APScheduler()
 scheduler.init_app(app)
 scheduler.start()
-scheduler.add_job(id='update', func=update, trigger='interval', hours=24)
+scheduler.add_job(id='update', func=update, trigger='interval', hours=6)
+
 if __name__ == '__main__':
     app.run(debug=False)
-
-
-
