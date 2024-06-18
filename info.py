@@ -23,13 +23,13 @@ def fetch_blacklisted_ips():
 
 def get_as_number(ip, conn):
     cursor = conn.cursor()
-    cursor.execute('SELECT as_number, last_updated, country FROM ip_as_mapping WHERE ip = ?', (ip,))
+    cursor.execute('SELECT as_number, last_updated, country, as_name FROM ip_as_mapping WHERE ip = ?', (ip,))
     result = cursor.fetchone()
 
     if result:
         last_updated = date.fromisoformat(result[1])
         if (date.today() - last_updated).days <= 7:
-            return (result[0], result[1])  # Return AS number if the record is up-to-date within the last 5 days
+            return result  # Return AS number if the record is up-to-date within the last 5 days
 
     return None  # Return None if the AS number needs updating or isn't in the database
 
@@ -61,8 +61,8 @@ def collect_data(conn):
         if result is None:
             ips_to_update.append(ip)
         else:
-            as_number, country = result
-            all_data.append((ip, as_number, str(today), country))
+            as_number, last_updated, country, as_name = result
+            all_data.append((ip, as_number, str(today), country, as_name))
 
     print(f"Processing {len(ips_to_update)} IPs in batches")
     cursor = conn.cursor()
@@ -81,14 +81,14 @@ def collect_data(conn):
                 name_country = as_name.split(",")
                 as_name = name_country[0].strip()
                 country = name_country[1].strip()
-            all_data.append((ip, as_number, str(today), country))
+            all_data.append((ip, as_number, str(today), country, as_name))
     for data in all_data:
-        ip, as_number, today, country = data
+        ip, as_number, today, country, as_name = data
         cursor.execute('REPLACE INTO ip_as_mapping (country, ip, as_name,  as_number, last_updated) VALUES (?, ?, ?,  ?, ?)', (country, ip, as_name, as_number, today))
     conn.commit()
 
     # Data for return or further processing
-    data_df = pd.DataFrame(all_data, columns=['IP', 'AS Number', 'Date', 'Country'])
+    data_df = pd.DataFrame(all_data, columns=['IP', 'AS Number', 'Date', 'Country', 'AS Name'])
 
     # Update the daily counts in a single transaction
     cursor.execute('''
@@ -108,6 +108,7 @@ def collect_data(conn):
     conn.commit()
 
     return data_df
+
 
 def get_ip():
     if "X-Forwarded-For" in request.headers:
