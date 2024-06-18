@@ -62,7 +62,7 @@ def collect_data(conn):
             ips_to_update.append(ip)
         else:
             as_number, last_updated, country, as_name = result
-            all_data.append((ip, as_number, str(today), country, as_name))
+            all_data.append((ip, as_number, last_updated, country, as_name))
 
     print(f"Processing {len(ips_to_update)} IPs in batches")
     cursor = conn.cursor()
