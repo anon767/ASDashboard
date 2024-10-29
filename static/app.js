@@ -28,6 +28,29 @@ document.addEventListener('DOMContentLoaded', function() {
         return data;
     }
 
+    if (userAsn) {
+        fetchData(userAsn).then(data => {
+            if (data && data.datasets.length > 0) {
+                    if (myChart) {
+                        myChart.destroy(); // Destroy the previous chart instance if exists
+                    }
+                    myChart = new Chart(ctx, {
+                        type: 'line',
+                        data: data,
+                        options: {
+                            scales: {
+                                y: {
+                                    beginAtZero: true
+                                }
+                            }
+                        }
+                    });
+                    } else {
+                        console.log('No data available for the auto-detected ASN.');
+                    }
+        }).catch(error => console.error('Error fetching the data for the auto-detected ASN:', error));
+    }
+    
     function updateChart(data) {
         if (myChart) {
             myChart.destroy();
